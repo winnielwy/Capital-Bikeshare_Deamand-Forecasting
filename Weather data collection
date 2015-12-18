@@ -1,0 +1,195 @@
+# -*- coding: utf-8 -*-
+"""
+Created on Sun Dec  6 22:15:34 2015
+
+@author: wenyingliu
+"""
+import pandas as pd
+import urllib2
+from bs4 import BeautifulSoup
+
+
+def scrape(url):
+    response = urllib2.urlopen(url)
+    soup = BeautifulSoup(response)
+
+    allRows = soup.findAll('tr',{'class':'no-metars'})
+    
+    Time=[]
+    Temp=[]
+    Heat_index=[]
+    Dew_point=[]
+    Humidity=[]
+    Pressure=[]
+    Visibility=[]
+    Wind_speed=[]
+    Precip=[]
+    Event=[]
+    Condition=[]
+    for row in allRows:
+        try:
+            time=str(row.findAll('td')[0].string.strip())
+        except:
+            time=''
+        Time.append(time)
+        
+        temp=row.findAll('td')[1].findAll('span',{'class':'wx-value'})
+        if temp!=[]:
+            for cell in temp:
+                t=str(cell.string.strip())
+        else:
+            t=''
+        Temp.append(str(cell.string.strip()))
+        
+        try:
+            heat=row.findAll('td')[2].findAll('td')
+        except:
+            heat=''
+        Heat_index.append(heat) 
+        
+        dew=row.findAll('td')[3].findAll('span',{'class':'wx-value'})
+        if dew!=[]:
+            for cell in dew:
+                t=str(cell.string.strip())
+        else:
+            t=''
+        Dew_point.append(str(cell.string.strip()))
+            
+        try:
+            humidity=str(row.findAll('td')[4].string.strip())
+        except:
+            humidity=''
+        Humidity.append(humidity)
+        
+        pressure=row.findAll('td')[5].findAll('span',{'class':'wx-value'})
+        if pressure!=[]:
+            for cell in pressure:
+                t=str(cell.string.strip())
+        else:
+            t=''
+        Pressure.append(str(cell.string.strip()))    
+            
+        visibility=row.findAll('td')[6].findAll('span',{'class':'wx-value'})
+        for cell in visibility:
+            Visibility.append(str(cell.string.strip())) 
+            
+        wind_speed=row.findAll('td')[8].findAll('span',{'class':'wx-value'})
+        if wind_speed!=[]:
+            for cell in wind_speed:
+                t=str(cell.string.strip())
+        else:
+            t=''
+        Wind_speed.append(t)  
+        
+        precip=row.findAll('td')[10].findAll('span',{'class':'wx-value'})    
+        if precip!=[]:
+            for cell in precip:
+                t=str(cell.string.strip())
+        else:
+            t=''
+        Precip.append(t)
+        
+        try:        
+            event=str(row.findAll('td')[-2].string.strip())
+        except:
+            event=""
+        Event.append(event)
+        
+        try:
+            condition=str(row.findAll('td')[-1].string.strip())
+        except:
+            condition=""
+        Condition.append(condition)
+
+        mydict={
+        'Time':Time,
+        'Temp':Temp,
+        'Heat_index':Heat_index,
+        'Dew_point':Dew_point,
+        'Humidity':Humidity,
+        'Pressure':Pressure,
+        'Visibility':Visibility,
+        'Wind_speed':Wind_speed,
+        'Precip':Precip,
+        'Event':Event,
+        'Condition':Condition}
+        my=pd.DataFrame(mydict)
+        
+    return my
+
+u='http://www.wunderground.com/history/airport/KDCA/2014/9/12/DailyHistory.html?req_city=&req_state=&req_statename=&reqdb.zip=&reqdb.magic=&reqdb.wmo='       
+
+f=scrape(u)
+
+
+from datetime import timedelta, date
+
+def daterange(start_date, end_date):
+    for n in range(int ((end_date - start_date).days)):
+        yield start_date + timedelta(n)
+
+date_range=[]
+start_date = date(2013, 1, 1)
+end_date = date(2015, 3, 31)
+for single_date in daterange(start_date, end_date):
+    cell=single_date.strftime("%Y/%-m/%-d")
+    date_range.append(cell)
+'''
+dates=[]
+for single_date in daterange(start_date, end_date):
+    cell=single_date.strftime("%-m/%-d/%Y")
+    dates.append(cell)
+'''    
+Url1 = 'http://www.wunderground.com/history/airport/KDCA/'
+Url2 = '/DailyHistory.html?req_city=&req_state=&req_statename=&reqdb.zip=&reqdb.magic=&reqdb.wmo='
+
+from datetime import datetime
+
+###################################################
+#####I used try, except to skip the error,there should be 819 dataframe in my list total.
+###   but when I go back to see the skipped url,the data is available, I 
+#### thinnk there should be something wrong with my scrape function. 
+
+total=[]    
+urls=[]
+for cell in date_range:
+    url=Url1+cell+Url2
+    urls.append(url)
+    try:
+        dict=scrape(url)
+    except:
+        dict=''
+    try:
+        dict['Time']=cell+' '+dict['Time'].astype(str)
+    except:    
+        pass
+    try:
+        dict['Time']=dict['Time'].apply(lambda x:datetime.strptime(x,'%Y/%m/%d %I:%M %p'))
+    except:
+        pass
+    total.append(dict)
+
+#Totaldata = [ x for x in total if x != '' ]
+
+Total=[]
+for i in total:
+      if len(i)>1:
+          Total.append(i)
+        
+final=pd.concat(Total)   
+ 
+'''
+    dict['time']=cell+' '+dict['Time'].astype(str)
+    #dict['Time']=dict['Time'].str[:-6]
+    total.append(dict)
+'''
+
+    
+'''
+input=pd.read_csv("bikeshare.csv") 
+#mydf=input.rename(columns={'Unnamed: 0':'Time'})
+input['Time']=input['Start date'].apply(lambda x:datetime.strptime(x,'%m/%d/%Y %H:%M'))
+
+input[.test == 'unique']
+'''
+total.read_tocsv("weather.csv")
