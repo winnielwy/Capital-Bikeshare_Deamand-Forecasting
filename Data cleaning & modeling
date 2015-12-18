@@ -1,0 +1,687 @@
+
+library("caret")
+library(randomForest)
+library(gbm)
+library(plyr)
+library(e1071)
+library(party)
+library(nnet)
+library(neuralnet)
+library(lubridate)
+
+
+##Data cleaning
+mydata=read.csv("hour.csv")
+mydata$dteday=ymd(mydata$dteday)
+mydata$dayofmonth=day(mydata$dteday)
+
+'''
+mydata$daytime=ifelse(mydata$hr >=5 &mydata$hr <12,
+1,ifelse(mydata$hr>=12 & mydata$hr<17,
+2,ifelse(mydata$hr>=17 &mydata$hr<22,
+3,4)) )
+'''
+#distribution
+par(mfrow=c(4,2))
+par(mar = rep(2, 4))
+hist(mydata$season)
+hist(mydata$weathersit)
+hist(mydata$hum_o)
+hist(mydata$holiday)
+hist(mydata$workingday)
+hist(data$temp)
+hist(data$atemp)
+hist(mydata$windspeed_o)
+
+# count of bike rentals by datetime
+plot(mydata$dteday, mydata$cnt, type="l", lwd=0.7,
+     main="Count of Bike Rentals")
+
+# percentage of registered users
+percentage <- mydata$registered/mydata$cnt*100
+plot(mydata$dteday, percentage, type="l", 
+     main="Percentage of Registered Users")
+
+summary(percentage)
+
+layout(matrix(c(1,2,3,4),2,2,byrow=FALSE))
+boxplot(mydata$cnt, main="cnt")
+boxplot(mydata$cnt ~ mydata$weathersit, main="weather")
+boxplot(mydata$cnt ~ mydata$temp, main="temperature")
+boxplot(mydata$cnt ~ mydata$atemp, main="feel_temperature")
+boxplot(mydata$cnt ~ mydata$hum_o, main="humidity")
+boxplot(mydata$cnt ~ mydata$windspeed_o, main="windspeed")
+
+layout(matrix(c(1,2,3,4),2,2,byrow=FALSE))
+boxplot(mydata$cnt ~ mydata$dteday, main="day")
+boxplot(mydata$cnt ~ mydata$hr, main="hour")
+boxplot(log(mydata$cnt)~mydata$hr,xlab="hour",ylab="log(cnt)")
+boxplot(mydata$cnt ~ mydata$yr, main="year")
+boxplot(mydata$cnt ~ mydata$mnth, main="month")
+boxplot(mydata$cnt ~ mydata$dayofmonth, main="day_of_month")
+boxplot(mydata$cnt ~ mydata$weekday, main="day_of_week")
+boxplot(mydata$cnt ~ mydata$season, main="season")
+boxplot(mydata$cnt ~ mydata$holiday, main="holiday")
+boxplot(mydata$cnt ~ mydata$workingday, main="workingday")
+
+mydata$season <- factor(mydata$season, c(1,2,3,4), ordered=FALSE)
+mydata$holiday <- factor(mydata$holiday, c(0,1), ordered=FALSE)
+mydata$workingday <- factor(mydata$workingday, c(0,1), ordered=FALSE)
+mydata$weathersit <- factor(mydata$weathersit, c(4,3,2,1), ordered=TRUE)
+mydata$hr <- factor(mydata$hr)
+mydata$yr <- factor(mydata$yr)
+mydata$mnth <- factor(mydata$mnth)
+mydata$dayofmonth <- factor(mydata$dayofmonth)
+mydata$weekday <- factor(mydata$weekday)
+
+###data exploration
+##correlation matrix
+library(corrplot)
+sub=data.frame(mydata$registered,mydata$casual,mydata$cnt,mydata$temp,mydata$hum,mydata$atemp,mydata$windspeed)
+M=cor(sub)
+corrplot(M, method = "circle",tl.cex=0.005)
+highCorr <- findCorrelation(M, 0.90)
+
+
+###features engineering
+library(rpart)
+library(rattle)
+library(rpart.plot)
+library(RColorBrewer)
+
+###categorize hour
+mydata$hr=as.integer(mydata$hr)
+d=rpart(registered~hr,data=mydata)
+fancyRpartPlot(d)
+
+d=rpart(casual~hr,data=mydata)
+fancyRpartPlot(d)
+
+mydata$dp_reg=0
+mydata$dp_reg[mydata$hr<8]=1
+mydata$dp_reg[mydata$hr>=22]=2
+mydata$dp_reg[mydata$hr>=10 & mydata$hr<18]=3
+mydata$dp_reg[mydata$hr==8]=4
+mydata$dp_reg[mydata$hr==9]=5
+mydata$dp_reg[mydata$hr==20 | mydata$hr==21]=6
+mydata$dp_reg[mydata$hr==19 | mydata$hr==18]=7
+
+mydata$dp_cas=0
+mydata$dp_cas[mydata$hr<=9]=1
+mydata$dp_cas[mydata$hr>=20]=2
+mydata$dp_cas[mydata$hr>=10 & mydata$hr<12]=3
+mydata$dp_cas[mydata$hr>=12 & mydata$hr<20]=4
+
+###categorize temperature
+f=rpart(registered~temp,data=mydata)
+fancyRpartPlot(f)
+
+f=rpart(casual~temp,data=mydata)
+fancyRpartPlot(f)
+
+mydata$temp_reg=0
+mydata$temp_reg[mydata$temp<0.29]=1
+mydata$temp_reg[mydata$temp>=0.29 & mydata$temp<0.47]=2
+mydata$temp_reg[mydata$temp>=0.47 & mydata$temp<0.71]=3
+mydata$temp_reg[mydata$temp>=0.71]=4
+
+mydata$temp_cas=0
+mydata$temp_cas[mydata$temp<0.35]=1
+mydata$temp_cas[mydata$temp>=0.35 & mydata$temp<0.47]=2
+mydata$temp_cas[mydata$temp>=0.47 & mydata$temp<0.71]=3
+mydata$temp_cas[mydata$temp>=0.71]=4
+
+##categorize atemp
+f=rpart(registered~atemp,data=mydata)
+fancyRpartPlot(f)
+
+f=rpart(casual~atemp,data=mydata)
+fancyRpartPlot(f)
+
+mydata$atemp_reg=0
+mydata$atemp_reg[mydata$temp<0.3]=1
+mydata$atemp_reg[mydata$temp>=0.3 & mydata$temp<0.6]=2
+mydata$atemp_reg[mydata$temp>=0.6]=3
+
+mydata$atemp_cas=0
+mydata$atemp_cas[mydata$temp<0.4]=1
+mydata$atemp_cas[mydata$temp>=0.4 & mydata$temp<0.61]=2
+mydata$atemp_cas[mydata$temp>=0.61]=3
+
+###categorize year(quarterly)
+mydata$mnth=as.integer(mydata$mnth)
+mydata$year_part[mydata$yr=='0']=1
+mydata$year_part[mydata$yr=='0' & mydata$mnth>3]=2
+mydata$year_part[mydata$yr=='0' & mydata$mnth>6]=3
+mydata$year_part[mydata$yr=='0' & mydata$mnth>9]=4
+mydata$year_part[mydata$yr=='1']=5
+mydata$year_part[mydata$yr=='1' & mydata$mnth>3]=6
+mydata$year_part[mydata$yr=='1' & mydata$mnth>6]=7
+mydata$year_part[mydata$yr=='1' & mydata$mnth>9]=8
+table(mydata$year_part)
+
+###categorize dat_type: weekend-0/working day-1/holiday-2
+mydata$day_type=0
+mydata$day_type[mydata$holiday=='0' & mydata$workingday=='0']=0   #weekend
+mydata$day_type[mydata$holiday=='1']=2    #holiday
+mydata$day_type[mydata$holiday=='0' & mydata$workingday=='1']=1   #workingday
+table(mydata$day_type)
+
+###weekend
+mydata$weekend=0
+mydata$weekend[mydata$weekday=="0" | mydata$weekday=="1"]=1
+table(mydata$weekend)
+
+###use randome forest to handle windspeed=0
+mydata$mnth=as.integer(mydata$mnth)
+
+table(mydata$windspeed==0)
+k=mydata$windspeed==0
+wind_0=subset(mydata,k)
+wind_1=subset(mydata,!k)
+
+library(randomForest)
+set.seed(415)
+#uses p/3 variables when building a random forest of regression trees
+fit <- randomForest(windspeed ~ season+weathersit+hum +mnth+temp+ yr+atemp+mnth+dayofmonth+hr, data=wind_1,mtry=4,importance=TRUE, ntree=250)
+pred=predict(fit,wind_0)
+wind_0$windspeed=pred
+mydata=rbind(wind_0,wind_1)
+
+'''
+###outlier analytics
+library(DMwR)
+outlier_score=lofactor(mydata[,c(2:9,12)],k=5)
+med=sapply(mydata[,c(6:12)],
+function(m)c(mean=mean(m,na.rm=TRUE),
+stdev=sd(m,na.rm=TRUE)))
+#long format
+medf=as.mydata.frame(t(med))
+medf=mydata.frame(attribute=rownames(medf),medf)
+medf=subset(medf,!is.na(medf$mean) &!is.na(medf$stdev))
+#add lower and upper bound
+times=3
+low=medf$mean-(times*medf$stdev)
+up=medf$mean+(times*medf$stdev)
+medf=mydata.frame(medf,lower=low,upper=up)
+'''
+
+###random forest
+str(mydata)
+mydata$season=as.factor(mydata$season)
+mydata$yr=as.factor(mydata$yr)
+mydata$holiday=as.factor(mydata$holiday)
+mydata$workingday=as.factor(mydata$workingday)
+mydata$weekend=as.factor(mydata$weekend)
+mydata$weekday=as.factor(mydata$weekday)
+mydata$weathersit <- factor(mydata$weathersit, c(4,3,2,1), ordered=TRUE)
+mydata$hr=as.factor(mydata$hr)
+mydata$mnth=as.factor(mydata$mnth)
+mydata$dayofmonth=as.factor(mydata$dayofmonth)
+mydata$dp_reg=as.factor(mydata$dp_reg)
+mydata$dp_cas=as.factor(mydata$dp_cas)
+mydata$year_part=as.factor(mydata$year_part)
+mydata$day_type=as.factor(mydata$day_type)
+mydata$weekday=as.factor(mydata$weekday)
+mydata$temp_cas=as.factor(mydata$temp_cas)
+mydata$temp_reg=as.factor(mydata$temp_reg)
+mydata$atemp_cas=as.factor(mydata$atemp_cas)
+mydata$atemp_reg=as.factor(mydata$atemp_reg)
+
+#write.csv(mydata,"model.csv")
+#mydata=read.csv("model.csv")
+###train and test set
+set.seed(45)
+x4 <- sample(1:31, 10,replace=F)
+test=mydata[as.integer(mydata$dayofmonth) %in% x4,]
+train=mydata[!(as.integer(mydata$dayofmonth) %in% x4),]
+table(train$dayofmonth)
+table(test$dayofmonth)
+
+'''
+As we know that dependent variables have natural outliers so we will predict log of dependent variables.
+Predict bike demand registered and casual users separately.
+y1=log(casual+1) and y2=log(registered+1), Here we have added 1 to deal with zero values in the casual and registered columns.
+'''
+
+train$reg1=train$registered+1
+train$cas1=train$casual+1
+train$logcas=log(train$cas1)
+train$logreg=log(train$reg1)
+test$logreg=0
+test$logcas=0
+
+
+boxplot(train$logreg~train$weather,xlab="weather", ylab="registered users")
+boxplot(train$logreg~train$season,xlab="season", ylab="registered users")
+
+###registered
+set.seed(45)
+fit1 <- randomForest(logreg ~season+yr+mnth+hr+holiday+weekday+workingday+
+                       weathersit+temp+atemp+hum+windspeed+dayofmonth+dp_reg+temp_reg+
+                       atemp_reg+year_part+day_type+weekend,
+                     data=train,mtry=6,importance=TRUE, ntree=200)
+
+fit1 <- randomForest(logreg ~season+yr+mnth+hr+holiday+weekday+workingday+
+                       weathersit+temp+hum+windspeed+dayofmonth,
+                     data=train,mtry=4,importance=TRUE, ntree=200)
+
+
+pred1=predict(fit1,test)
+test$logreg=pred1
+plot(fit1)
+importance(fit1)
+round(importance(fit1), 2)
+varImpPlot(fit1)
+# Mean of squared residuals: 0.1247131
+# % Var explained: 93.61
+
+## the first column is the mean decrease in accuracy and the second the mean decrease in MSE.
+
+#The margin of a data point is as the proportion of votes for the correct class minus
+#maximum proportion of votes for other classes. Generally speaking, positive margin
+#means correct classification.
+#plot(margin(fit1,test$logreg))
+
+
+
+
+
+
+#############Modeling
+mydata=read.csv("model.csv")
+
+mydata$season=as.factor(mydata$season)
+mydata$yr=as.factor(mydata$yr)
+mydata$holiday=as.factor(mydata$holiday)
+mydata$workingday=as.factor(mydata$workingday)
+mydata$weekend=as.factor(mydata$weekend)
+mydata$weekday=as.factor(mydata$weekday)
+mydata$weathersit <- factor(mydata$weathersit, c(4,3,2,1), ordered=TRUE)
+mydata$hr=as.factor(mydata$hr)
+mydata$mnth=as.factor(mydata$mnth)
+mydata$dayofmonth=as.factor(mydata$dayofmonth)
+mydata$dp_reg=as.factor(mydata$dp_reg)
+mydata$dp_cas=as.factor(mydata$dp_cas)
+mydata$year_part=as.factor(mydata$year_part)
+mydata$day_type=as.factor(mydata$day_type)
+mydata$weekday=as.factor(mydata$weekday)
+mydata$temp_cas=as.factor(mydata$temp_cas)
+mydata$temp_reg=as.factor(mydata$temp_reg)
+mydata$atemp_cas=as.factor(mydata$atemp_cas)
+mydata$atemp_reg=as.factor(mydata$atemp_reg)
+
+library(lubridate)
+mydata$dteday=ymd(mydata$dteday)
+
+mydata$temp_o=data$temp
+mydata$atemp_o=data$atemp
+#write.csv(mydata,"model.csv")
+
+###train and test set
+set.seed(45)
+x4 <- sample(1:31, 10,replace=F)
+test=mydata[as.integer(mydata$dayofmonth) %in% x4,]
+train=mydata[!(as.integer(mydata$dayofmonth) %in% x4),]
+table(train$dayofmonth)
+table(test$dayofmonth)
+
+train$logcas=log(train$registered+1)
+train$logreg=log(train$casual+1)
+test$logreg_pre=0
+test$logcas_pre=0
+test$logreg=log(test$registered+1)
+test$logcas=log(test$casual+1)
+
+
+#formula
+#training
+reg_val=c('season','yr','mnth','hr','holiday','weekday','workingday',
+            'weathersit','temp','atemp','hum','windspeed','dayofmonth','dp_reg',
+            'temp_reg','atemp_reg','year_part','day_type','weekend')
+reg_x=train[reg_val]
+reg_y=train$logreg  
+
+cas_val=c('season','yr','mnth','hr','holiday','weekday','workingday',
+          'weathersit','temp','atemp','hum','windspeed','dayofmonth','dp_cas',
+          'temp_cas','atemp_cas','year_part','day_type','weekend')
+cas_x=train[cas_val]
+cas_y=train$logcas
+
+formula_reg <- logreg~season+yr+mnth+hr+holiday+weekday+workingday+
+  weathersit+temp+atemp+hum+windspeed+dayofmonth+dp_reg+
+  temp_reg+atemp_reg+year_part+day_type+weekend
+
+formula_cas <- logcas ~season+yr+mnth+hr+holiday+weekday+workingday+
+  weathersit+temp+atemp+hum+windspeed+dayofmonth+dp_cas+temp_cas+
+  atemp_cas+year_part+day_type+weekend
+
+## Random Forest
+set.seed(45)
+tc_oob <- trainControl("oob")
+tc_cv <- trainControl("cv",number=5,summaryFunction=defaultSummary)
+Grid <- expand.grid(mtry = seq(8,12,1))
+Grid_2 <- expand.grid(mtry = seq(7,11,1))
+rf.reg_oob <- train(formula_reg, data=train , method='rf', trControl=tc_oob,tuneGrid=Grid,metric='RMSE',importance = TRUE)
+#11    0.3017900  0.9533449
+rf.cas_oob <- train(formula_cas, data=train , method='rf', trControl=tc_oob,tuneGrid=Grid_2,metric='RMSE',importance = TRUE)
+#8     0.4725671  0.8996407
+
+rf.reg_cv <- train(formula_reg, data=train , method='rf', trControl=tc_cv,tuneGrid=Grid,metric='RMSE',importance = TRUE)
+#11    0.3083817  0.9514851  
+rf.cas_cv <- train(formula_cas, data=train , method='rf', trControl=tc_cv,tuneGrid=Grid_2,metric='RMSE',importance = TRUE)
+#8     0.4800399  0.8967076
+
+## gbm fitting
+set.seed(45)
+fitControl <- trainControl(method = 'cv', number = 5, summaryFunction=defaultSummary)
+Grid=expand.grid(n.trees = seq(1000,3000,100), interaction.depth =c(4, 8, 12), shrinkage = c(0.1),n.minobsinnode=c(10))
+
+fit.reg.gbm <- train(formula_reg, data=train, method = 'gbm', trControl=fitControl,tuneGrid=Grid,metric='RMSE',maximize=FALSE)
+fit.cas.gbm <- train(formula_cas, data=train, method = 'gbm', trControl=fitControl,tuneGrid=Grid,metric='RMSE',maximize=FALSE)
+
+whichTwoPct <- tolerance(fit.reg.gbm$results, metric = "RMSE",
+                         tol = 2, maximize = TRUE)
+cat("best model within 2 pct of best:\n")
+fit.reg.gbm$results[whichTwoPct,1:6]
+
+##plot
+trellis.par.set(caretTheme())
+plot(fit.reg.gbm,plottype="level",scales = list(x = list(rot = 90)))
+ggplot(fit.reg.gbm)
+plot(fit.reg.gbm)
+resampleHist(fit.reg.gbm)
+
+##Neural Network
+set.seed(45)
+my.grid <- expand.grid(.decay = c(0.5, 0.1), .size = c(7,8,9))
+#size:number of unit in the hidden layer ;decay: parameter for weight decay
+neural_reg <- train(formula_reg, data = train,
+                      method = "nnet", maxit = 1000, tuneGrid = my.grid,trControl=fitControl, trace = F, linout = 1)   
+#ize = 9 and decay = 0.5   0.3474656422  0.9382184379
+neural_cas <- train(formula_cas, data = train,
+                    method = "nnet", maxit = 1000, tuneGrid = my.grid, trControl=fitControl,trace = F, linout = 1)   
+#0.5    9     0.5263905529  0.8754875592
+'''
+rctrl1 <- trainControl(method = "cv", number = 3, returnResamp = "all")
+rctrl2 <- trainControl(method = "LOOCV")
+rctrl3 <- trainControl(method = "none")
+rctrlR <- trainControl(method = "cv", number = 3, returnResamp = "all", search ="random")
+
+test_reg_cv_model <- train(formula_reg, data=train,method = "neuralnet", trControl = rctrl1,
+                           tuneGrid = data.frame(layer1 = 2:3, layer2 = 0, layer3 = 0),
+                           rep = 3,
+                           threshold = 0.1,        
+                           stepmax = 1e+05)
+test_reg_pred <- predict(test_reg_cv_model, test)
+
+set.seed(45)
+test_reg_cv_form <- train(formula_reg, data = train, 
+                          method = "neuralnet", trControl = rctrl1,
+                          tuneGrid = data.frame(layer1 = 2:3, layer2 = 0, layer3 = 0),
+                          rep = 3,
+                          threshold = 0.1,
+                          startweights = test_reg_cv_model$finalModel$weights)
+test_reg_pred_form <- predict(test_reg_cv_form, test)
+
+set.seed(45)
+test_reg_rand <- train(formula_reg,
+                       method = "neuralnet", 
+                       trControl = rctrlR,
+                       tuneLength = 4,
+                       rep = 10,
+                       threshold = 0.1)
+
+set.seed(45)
+test_reg_loo_model <- train(formula_reg, data = training, 
+                            method = "neuralnet", 
+                            trControl = rctrl2,
+                            tuneGrid = data.frame(layer1 = 2:3, layer2 = 0, layer3 = 0),
+                            rep = 3,
+                            threshold = 0.1,
+                            startweights = test_reg_cv_model$finalModel$weights)
+
+set.seed(45)
+test_reg_none_model <- train(formula_reg,
+                             method = "neuralnet", 
+                             trControl = rctrl3,
+                             tuneLength = 1,
+                             rep = 3,
+                             threshold = 0.1)
+test_reg_none_pred <- predict(test_reg_none_model, test)
+
+'''
+##svm
+'''
+###model.matrix
+reg_v=c('mnth','weekday',
+        'weathersit','temp_o','hum','windspeed','dayofmonth','dp_reg',
+        'year_part','day_type','weekend')
+reg_x1=train[reg_v]
+reg_y1=train$logreg
+reg_x11=model.matrix(windspeed~.,reg_x1)
+
+test_regx=test[reg_v]
+test_regy=test[logreg]
+
+cas_v=c('mnth','weekday',
+        'weathersit','temp_o','hum','windspeed','dayofmonth','dp_cas',
+        'year_part','day_type','weekend')
+cas_x1=train[cas_v]
+cas_y1=train$logcas
+cas_x11=model.matrix(windspeed~.,cas_x1)
+
+test_casx=test[cas_v]
+test_casy=test[logcas]
+'''
+
+set.seed(45)
+
+svmControl <- trainControl(method = "cv",number = 5,savePred=T)
+svmFit_reg <- train(reg_x,reg_y
+                ,method = "svmLinear", tuneLength = 5,preProc = c("center", "scale"),
+                trControl = svmControl,scaled = FALSE)
+'''
+svmFit_reg2<- train(reg_x,reg_y
+                    ,method = "svmRadial", tuneLength = 5,preProc = c("center", "scale"),
+                    trControl = svmControl,scaled = FALSE)
+
+svmFit_reg2 <- train(reg_x11,reg_y1
+                    ,method = "svmRadial", tuneLength = 5,preProc = c("center", "scale"),
+                    trControl = svmControl,scaled = FALSE)
+'''
+svmFit_cas <- train(cas_x,cas_y
+                ,method = "svmLinear", tuneLength = 5,
+                trControl = svmControl, scaled = FALSE)
+
+##Linear regression
+##data
+reg_val_lm=c('mnth','weekday',
+          'weathersit','hum','windspeed','dayofmonth','dp_reg',
+          'atemp_reg','year_part','day_type')
+
+lmreg_x=train[reg_val_lm]
+reg_y=train$logreg  
+
+cas_val_lm=c('mnth','weekday',
+          'weathersit','hum','windspeed','dayofmonth','dp_cas',
+          'atemp_cas','year_part','day_type')
+lmcas_x=train[cas_val_lm]
+cas_y=train$logcas
+##model
+lm_reg=train(lmreg_x,reg_y,method="lm",trControl=fitControl,metric="RMSE")
+lm_cas=train(lmcas_x,cas_y,method="lm",trControl=fitControl,metric="RMSE")
+
+seqlm_reg=train(lmreg_x,reg_y,method="leapSeq",trControl=fitControl,metric="RMSE")
+
+summary(lm_reg)
+summary(lm_cas)
+residuals=resid(lm_reg)
+pre_lm_reg=predict(lm_reg,newdata=test)
+plot(train$logreg,residuals)
+abline(0,0)
+plot(test$logreg,pre_lm_reg)
+modelvalues=data.frame(obs=test$logreg,pred=pre_lm_reg)
+defaultSummary(modelvalues)
+varImp(lm_reg)
+plot(varImp(lm_reg))
+
+##CT tree
+set.seed(45)
+fitControl <- trainControl(method = 'cv', number=5,summaryFunction=defaultSummary)
+Grid <- expand.grid(maxdepth = seq(5, 30,5))
+
+ctree2.reg_CV <- train(reg_x,reg_y, method = 'ctree2', trControl=fitControl,tuneGrid=Grid,metric='RMSE')
+ctree2.cas_CV <- train(cas_x,cas_y, method = 'ctree2', trControl=fitControl,tuneGrid=Grid,metric='RMSE')
+
+fit.ctree.reg <- train(reg_x,reg_y,method='ctree',trControl=fitControl,tuneGrid=expand.grid(mincriterion=0.95))
+fit.ctree.cas <- train(cas_x,cas_y,method='ctree',trControl=fitControl,tuneGrid=expand.grid(mincriterion=0.95))
+ctreeVarImp = varImp(ctree2.cas_CV)
+
+
+###prediction
+##test
+test_reg_x=test[reg_val]
+test_reg_y=test$logreg
+test_cas_x=test[cas_val]
+test_cas_y=test$logcas
+
+##model comparsion
+#cv
+resamps_reg=resamples(list(rf_reg.cv=rf.reg_cv,
+                        svm_reg=svmFit_reg,
+                       gbm_reg =fit.reg.gbm,
+                       neural_reg=neural_reg,
+                       ctree2_reg=ctree2.reg_CV))
+                      
+
+summary(resamps_reg)
+
+resamps_cas=resamples(list(rf_cas.cv=rf.cas_cv,
+                           svm_cas=svmFit_cas,
+                           gbm_cas =fit.cas.gbm,
+                           neural_cas=neural_cas,
+                           ctree2_cas=ctree2.cas_CV))
+summary(resamps_cas)
+
+bwplot(resamps_reg, layout = c(2, 1))
+bwplot(resamps_cas, layout = c(2, 1))
+dotplot(resamps_reg, metric = "RMSE")
+xyplot(resamps_reg, what = "BlandAltman")
+splom(resamps_reg)
+
+difValues <- diff(resamps_reg)
+summary(difValues)
+bwplot(difValues, layout = c(2, 1))
+dotplot(difValues)
+
+###best model-GBM
+set.seed(45)
+fitControl <- trainControl(method = 'none',summaryFunction=defaultSummary)
+Grid_reg=data.frame(n.trees = c(1500), interaction.depth =c( 8), shrinkage = c(0.1),n.minobsinnode=c(10))
+Grid_cas=data.frame(n.trees = c(1300), interaction.depth =c( 8), shrinkage = c(0.1),n.minobsinnode=c(10))
+
+Best.reg.gbm <- train(formula_reg, data=train, method = 'gbm', trControl=fitControl,tuneGrid=Grid_reg,metric='RMSE',maximize=FALSE)
+Best.cas.gbm <- train(formula_cas, data=train, method = 'gbm', trControl=fitControl,tuneGrid=Grid_cas,metric='RMSE',maximize=FALSE)
+
+imp=varImp(fit.reg.gbm)
+plot(imp)
+###prediction
+pre.boost.reg=predict(Best.reg.gbm,newdata=test)
+test$pre_boost_reg=pre.boost.reg
+
+pre.boost.cas=predict(Best.reg.gbm,newdata=test)
+test$pre_boost_cas=pre.boost.cas
+
+pre.boost_reg=exp(test$pre_boost_reg)-1
+pre.boost_cas=exp(test$pre_boost_cas)-1
+
+modelvalues1=data.frame(obs=log(test$registered+1),pred=pre.boost.reg)
+modelvalues2=data.frame(obs=test$registered,pred=pre.boost_reg)
+modelvalues3=data.frame(obs=test$logcas,pred=pre.boost.cas)
+modelvalues4=data.frame(obs=test$casual,pred=pre.boost_cas)
+
+
+defaultSummary(modelvalues3)
+
+#add both columns into final count, round to whole number
+test$pred.boost_cnt=round(test$pre.boost_reg+test$pre.boost_cas,2)
+s<-data.frame(datetime=test$dteday,cnt=test$cnt)
+#write.csv(s,file="submit.csv",row.names=FALSE)
+
+attach(test)
+rmse_boost_reg=sqrt(mean((pre.boost_reg-registered)^2))   #35.58
+rmse_boost_cas=sqrt(mean((pre.boost_cas-casual)^2))   #16.93
+rmse_boost_cnt=sqrt(mean((pred.boost_cnt-cnt)^2))    #43.19
+log_rmse_boost_cnt=sqrt(mean((log(pred.boost_cnt+1)-log(cnt+1))^2))  #0.313
+
+
+
+####test set performance
+
+
+models_reg <- list(rf_reg.cv=rf.reg_cv,
+               svm_reg=svmFit_reg, gbm_reg =fit.reg.gbm,neural_reg=neural_reg,
+               ctree2_reg=ctree2.reg_CV,lm_reg=lm_reg)
+models_cas <- list(rf_cas.cv=rf.cas_cv,
+                   svm_cas=svmFit_cas, gbm_cas=fit.cas.gbm,neural_cas=neural_cas,
+                   ctree2_cas=ctree2.cas_CV,lm_cas=lm_cas)
+
+testPred_reg <- predict(models_reg, newdata = test_reg_x)
+testPred_cas <- predict(models_cas, newdata = test_cas_x)
+
+lapply(testPred_reg, function(x) x[1:5])
+lapply(testPred_cas, function(x) x[1:5])
+
+pre_reg=exp(data.frame(testPred_reg))-1
+pre_cas=exp(data.frame(testPred_cas))-1
+
+#rf.oob=pre_reg$rf_reg.oob+pre_cas$rf_cas.oob
+rf.cv=pre_reg$rf_reg.cv+pre_cas$rf_cas.cv
+svm=pre_reg$svm_reg+pre_cas$svm_cas
+gbm=pre_reg$gbm_reg+pre_cas$gbm_cas
+neural=pre_reg$neural_reg+pre_cas$neural_cas
+ctree2=pre_reg$ctree2_reg+pre_cas$ctree2_cas
+#ctree=pre_reg$ctree_reg+pre_cas$ctree_cas
+lm=pre_reg$lm_reg+pre_cas$lm_cas
+pre_cnt=data.frame(rf.cv,gbm,svm,neural,ctree2,lm)
+pre_cnt$cnt=test$cnt
+
+attach(pre_cnt)
+modelvalue=data.frame(obs=cnt,pred=ctree2)
+defaultSummary(modelvalue)
+
+attach(pre_cnt)
+#rmsle_rf.oob=sqrt(mean((log(rf.oob+1)-log(cnt+1))^2))
+rmsle_rf.cv=sqrt(mean((log(rf.cv+1)-log(cnt+1))^2))
+rmsle_gbm=sqrt(mean((log(gbm+1)-log(cnt+1))^2))
+rmsle_neural=sqrt(mean((log(neural+1)-log(cnt+1))^2))
+rmsle_svm=sqrt(mean((log(svm+1)-log(cnt+1))^2))
+rmsle_ctree2=sqrt(mean((log(ctree2+1)-log(cnt+1))^2))
+#rmsle_ctree=sqrt(mean((log(ctree+1)-log(cnt+1))^2))
+rmsle_lm=sqrt(mean((log(lm+1)-log(cnt+1))^2))
+
+##
+###Linear
+summary(lm_reg)
+summary(lm_cas)
+residuals=resid(lm_reg)
+pre_lm_reg=predict(lm_reg,newdata=test)
+plot(train$logreg,residuals)
+abline(0,0)
+plot(test$logreg,pre_lm_reg)
+modelvalues=data.frame(obs=test$logreg_T,pred=pre_lm_reg)
+defaultSummary(modelvalues)
+varImp(lm_reg)
+plot(varImp(lm_reg))
+##Gradient Boosting
+summary(fit.reg.gbm$finalModel)
+
+residuals=resid(fit.reg.gbm)
+pre_gbm_reg=predict(fit.reg.gbm,newdata=test)
+plot(train$logreg,residuals)
+abline(0,0)
+plot(test$logreg,pre_lm_reg)
+modelvalues=data.frame(obs=test$logreg,pred=pre_gbm_reg)
+defaultSummary(modelvalues)
+
